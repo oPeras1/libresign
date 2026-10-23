@@ -73,7 +73,6 @@ export default [
 			'@nextcloud/l10n-non-breaking-space': 'off', // ~6 hits; changes translation strings
 
 			// Behavior/API risk — may rename Vue events, slots, attrs, or break DOM contracts
-			'@nextcloud/no-deprecated-library-props': 'off', // ~10 hits; needs careful Nc* prop migration
 			'vue/attribute-hyphenation': 'off', // ~404 hits; large + DOM attr naming
 			'vue/custom-event-name-casing': 'off', // ~65 hits; may rename Vue events
 			'vue/slot-name-casing': 'off', // ~3 hits; may rename slots
@@ -98,7 +97,6 @@ export default [
 			'@stylistic/member-delimiter-style': 'off', // ~180 hits
 			'@stylistic/no-extra-semi': 'off', // ~23 hits
 			'@stylistic/no-multi-spaces': 'off', // ~1 hit
-			'@stylistic/no-multiple-empty-lines': 'off', // ~42 hits
 			'@stylistic/no-tabs': 'off', // ~190 hits; tabs vs spaces migration
 			'@stylistic/no-trailing-spaces': 'off', // ~1 hit
 			'@stylistic/operator-linebreak': 'off', // ~6 hits
@@ -108,10 +106,7 @@ export default [
 			'@stylistic/space-before-function-paren': 'off', // ~2 hits
 			'@stylistic/space-in-parens': 'off', // ~2 hits
 			'vue/first-attribute-linebreak': 'off', // ~435 hits; formatting churn
-			'vue/html-indent': 'off', // ~164 hits; formatting churn
 			'vue/max-attributes-per-line': 'off', // ~68 hits; formatting churn
-			'vue/multiline-html-element-content-newline': 'off', // ~2 hits
-			'vue/singleline-html-element-content-newline': 'off', // ~74 hits; formatting churn
 
 			// Import sorting / extensions — large churn; needs dedicated PR
 			'perfectionist/sort-imports': 'off', // ~1216 hits

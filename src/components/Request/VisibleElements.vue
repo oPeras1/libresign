@@ -5,7 +5,6 @@
 <template>
 	<NcModal v-if="modal"
 		:name="signaturePositionsModalTitle"
-		:close-button-contained="false"
 		:close-button-outside="true"
 		size="full"
 		@close="closeModal">
@@ -19,7 +18,9 @@
 						:variant="isDraft ? 'warning' : 'primary'"
 						:aria-label="documentStatusAriaLabel"
 						no-close />
-					<h2 class="name">{{ document.name }}</h2>
+					<h2 class="name">
+						{{ document.name }}
+					</h2>
 				</div>
 				<span role="status"
 					aria-live="polite"

@@ -9,14 +9,14 @@
 				<img :src="logo" :alt="t('libresign', 'LibreSign logo')" draggable="false">
 			</div>
 			<div id="validation-content">
-					<div v-if="isAsyncSigning" class="infor-container">
-						<div class="section">
-							<SigningProgress
-								:sign-request-uuid="signRequestUuidForProgress"
-								@completed="handleSigningComplete"
-								@error="handleSigningError" />
-						</div>
+				<div v-if="isAsyncSigning" class="infor-container">
+					<div class="section">
+						<SigningProgress
+							:sign-request-uuid="signRequestUuidForProgress"
+							@completed="handleSigningComplete"
+							@error="handleSigningError" />
 					</div>
+				</div>
 				<div v-else-if="!hasInfo" class="infor-container">
 					<div class="section">
 						<!-- TRANSLATORS: "Validate" here is a technical process: checking the cryptographic integrity of the signatures, the certificate chain and revocation status. It does NOT mean approving or authorizing something. Choose a word in your language that conveys "to check" or "to verify", not "to approve" or "to authorize". -->
@@ -586,14 +586,13 @@ function getIconValidityPath(signer: ValidationDisplaySigner) {
 }
 
 async function viewDocument() {
-	if (!document.value?.uuid || !document.value?.name || typeof document.value.nodeId !== 'number') {
+	if (!document.value?.uuid || !document.value?.name) {
 		return
 	}
 	const fileUrl = generateUrl('/apps/libresign/p/pdf/{uuid}', { uuid: document.value.uuid })
 	await openDocument({
 		fileUrl,
 		filename: document.value.name,
-		nodeId: document.value.nodeId,
 	})
 }
 
@@ -797,8 +796,14 @@ function getValidationDocumentSigners(validationDocument: ValidationDocumentStat
 	return signers
 }
 
+function hasAppliedSignature(signer: ValidationDisplaySigner) {
+	return Boolean(signer.signed)
+		|| Number(signer.status) === SIGN_REQUEST_STATUS.SIGNED
+		|| signer.signature_validation !== undefined
+}
+
 function getDocumentValidationSummary(validationDocument: ValidationDocumentState): DocumentValidationSummary {
-	const signers = getValidationDocumentSigners(validationDocument)
+	const signers = getValidationDocumentSigners(validationDocument).filter(hasAppliedSignature)
 
 	if (signers.length === 0) {
 		return {

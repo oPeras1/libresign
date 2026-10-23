@@ -8,7 +8,6 @@
 		class="policy-workbench__section"
 		:name="settingsSectionName"
 		:description="settingsSectionDescription">
-
 		<CatalogToolbar
 			:model-value="catalogState.settingsFilter.value"
 			:has-active-filter="hasActiveFilter"
@@ -88,7 +87,6 @@
 			v-if="state.activeDefinition"
 			:name="state.activeDefinition.title"
 			size="full"
-			:can-close="true"
 			@closing="requestCloseSetting()">
 			<CatalogSettingDialogFrame
 				:dialog-description="dialogDescription"
@@ -142,34 +140,32 @@
 					@request-create-rule="requestCreateRule()"
 					@table-scroll="handleCrudTableScroll" />
 			</CatalogSettingDialogFrame>
-			</NcDialog>
+		</NcDialog>
 
-			<NcDialog
-				v-if="showSettingDialogExtrasModal && settingDialogExtrasModal"
-				:name="settingDialogExtrasModalName"
-				size="normal"
-				:can-close="true"
-				@closing="closeSettingDialogExtrasModal">
-				<div data-cy="geoip-database-form">
-					<component
-						:is="settingDialogExtrasModal"
-						@updated="onSettingDialogExtrasUpdated" />
-				</div>
-			</NcDialog>
+		<NcDialog
+			v-if="showSettingDialogExtrasModal && settingDialogExtrasModal"
+			:name="settingDialogExtrasModalName"
+			size="normal"
+			@closing="closeSettingDialogExtrasModal">
+			<div data-cy="geoip-database-form">
+				<component
+					:is="settingDialogExtrasModal"
+					@updated="onSettingDialogExtrasUpdated" />
+			</div>
+		</NcDialog>
 
-			<NcDialog
-				v-if="showCreateScopeDialog || state.editorDraft"
-				:key="ruleDialogInstanceKey"
-				:name="ruleDialogTitle"
-				:size="ruleEditorDialogSize"
-				:class="ruleEditorDialogClass"
-				:buttons="ruleDialogButtons"
-				:can-close="true"
-				@closing="requestCloseRuleDialog()">
-				<div
-					v-if="state.editorDraft"
-					class="policy-workbench__editor-modal-body"
-					:class="ruleEditorDialogBodyClass">
+		<NcDialog
+			v-if="showCreateScopeDialog || state.editorDraft"
+			:key="ruleDialogInstanceKey"
+			:name="ruleDialogTitle"
+			:size="ruleEditorDialogSize"
+			:class="ruleEditorDialogClass"
+			:buttons="ruleDialogButtons"
+			@closing="requestCloseRuleDialog()">
+			<div
+				v-if="state.editorDraft"
+				class="policy-workbench__editor-modal-body"
+				:class="ruleEditorDialogBodyClass">
 				<PolicyRuleEditorPanel
 					v-if="state.editorDraft"
 					:editor-draft="state.editorDraft"
@@ -214,7 +210,6 @@
 			:message="discardUnsavedChangesDialogMessage"
 			:buttons="discardDialogButtons"
 			size="normal"
-			:can-close="true"
 			@closing="cancelDiscardDialog" />
 
 		<NcDialog
@@ -223,7 +218,7 @@
 			:message="pendingRemovalMessage"
 			:buttons="removalDialogButtons"
 			size="normal"
-			:can-close="!isRemovingRule"
+			:no-close="isRemovingRule"
 			@closing="cancelRuleRemoval" />
 	</NcSettingsSection>
 </template>
@@ -446,7 +441,6 @@ const {
 	defaultSourceLabel,
 	defaultInlineLabel,
 } = useCatalogRuleCreation({ state })
-
 
 const ruleDialogTitle = computed(() => {
 	if (!state.editorDraft) {

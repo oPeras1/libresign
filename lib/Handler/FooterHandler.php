@@ -62,6 +62,11 @@ class FooterHandler {
 
 		$htmlFooter = $this->getRenderedHtmlFooter($forceEnabled);
 		foreach ($dimensions as $dimension) {
+			// The stamp must match the page as displayed: pdftk rotates it onto
+			// /Rotate 90|270 pages and would otherwise shrink it to fit.
+			if (in_array(PdfMetadataExtractor::normalizeRotation($dimension['r'] ?? 0), [90, 270], true)) {
+				$dimension = ['w' => $dimension['h'], 'h' => $dimension['w']];
+			}
 			if (!isset($pdf)) {
 				$pdf = new Mpdf([
 					'tempDir' => $this->tempManager->getTempBaseDir(),

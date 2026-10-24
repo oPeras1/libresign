@@ -11,11 +11,15 @@ namespace OCA\Libresign\Service\File\Pdf;
 
 use OCA\Libresign\Exception\LibresignException;
 use OCA\Libresign\Vendor\Smalot\PdfParser\Document;
+use OCA\Libresign\Vendor\Smalot\PdfParser\PDFObject;
 use OCP\Files\File;
 use OCP\ITempManager;
 use Psr\Log\LoggerInterface;
 
 class PdfMetadataExtractor {
+	/** Guards against malformed page trees whose /Parent chain loops. */
+	private const int MAX_PAGE_TREE_DEPTH = 64;
+
 	private string $content = '';
 	private string $fileName = '';
 	private ?Document $document = null;
@@ -63,9 +67,14 @@ class PdfMetadataExtractor {
 	}
 
 	/**
+	 * Dimensions are the unrotated page size (CropBox from pdfinfo, MediaBox
+	 * from the fallback parser), matching the coordinate space of visible
+	 * elements. Pages with a non-zero /Rotate also carry `r` (90, 180 or 270)
+	 * so consumers can derive the displayed size.
+	 *
 	 * @return (array[]|int)[]
 	 * @throws LibresignException
-	 * @psalm-return array{p: int, d?: non-empty-list<array{w: mixed, h: mixed}>}
+	 * @psalm-return array{p: int, d?: non-empty-list<array{w: mixed, h: mixed, r?: int}>}
 	 */
 	public function getPageDimensions(): array {
 		if ($return = $this->getPageDimensionsWithPdfInfo()) {
@@ -82,6 +91,7 @@ class PdfMetadataExtractor {
 		];
 		foreach ($pages as $page) {
 			$details = $page->getDetails();
+			$rotate = $this->getInheritedRotate($page);
 			if (!isset($details['MediaBox'])) {
 				$pages = $document->getObjectsByType('Pages');
 				$details = reset($pages)->getHeader()->getDetails();
@@ -90,10 +100,11 @@ class PdfMetadataExtractor {
 				$this->logger->error('Impossible get metadata from this file: Error to get page width and height. If possible, open an issue at github.com/libresign/libresign with the file that you used.');
 				throw new LibresignException('Impossible get metadata from this file.');
 			}
-			$output['d'][] = [
-				'w' => $details['MediaBox'][2],
-				'h' => $details['MediaBox'][3],
-			];
+			$output['d'][] = $this->buildDimension(
+				$details['MediaBox'][2],
+				$details['MediaBox'][3],
+				$rotate,
+			);
 		}
 		$pending = $output['p'] - count($output['d']);
 		if ($pending) {
@@ -118,19 +129,75 @@ class PdfMetadataExtractor {
 		if (!$pdfinfo) {
 			return [];
 		}
-		if (!preg_match_all('/Page +\d+ +size: +(\d+\.?\d*) x (\d+\.?\d*)/', (string)$pdfinfo, $pages)) {
+		return $this->parsePdfInfoOutput((string)$pdfinfo);
+	}
+
+	/**
+	 * @return array{p?: int, d?: non-empty-list<array{w: float, h: float, r?: int}>}
+	 */
+	public function parsePdfInfoOutput(string $pdfinfo): array {
+		if (!preg_match_all('/Page +(\d+) +size: +(\d+\.?\d*) x (\d+\.?\d*)/', $pdfinfo, $pages)) {
 			return [];
 		}
+		preg_match_all('/Page +(\d+) +rot: +(-?\d+)/', $pdfinfo, $rotations);
+		$rotationByPage = array_combine($rotations[1], $rotations[2]);
 		$output = [
 			'p' => count($pages[1]),
 		];
-		foreach ($pages[1] as $page => $width) {
-			$output['d'][] = [
-				'w' => (float)$width,
-				'h' => (float)$pages[2][$page],
-			];
+		foreach ($pages[1] as $index => $pageNumber) {
+			$output['d'][] = $this->buildDimension(
+				(float)$pages[2][$index],
+				(float)$pages[3][$index],
+				$rotationByPage[$pageNumber] ?? null,
+			);
 		}
 		return $output;
+	}
+
+	/**
+	 * @return array{w: mixed, h: mixed, r?: int}
+	 */
+	private function buildDimension(mixed $width, mixed $height, mixed $rotate): array {
+		$dimension = [
+			'w' => $width,
+			'h' => $height,
+		];
+		$rotation = self::normalizeRotation($rotate);
+		if ($rotation !== 0) {
+			$dimension['r'] = $rotation;
+		}
+		return $dimension;
+	}
+
+	/**
+	 * /Rotate is inheritable: the nearest node of the page tree that sets it wins.
+	 */
+	private function getInheritedRotate(PDFObject $page): mixed {
+		$node = $page;
+		for ($depth = 0; $node instanceof PDFObject && $depth < self::MAX_PAGE_TREE_DEPTH; $depth++) {
+			if ($node->has('Rotate')) {
+				return $node->getDetails(false)['Rotate'] ?? null;
+			}
+			$node = $node->get('Parent');
+		}
+		return null;
+	}
+
+	/**
+	 * /Rotate must be an integer multiple of 90; anything else is ignored by viewers.
+	 *
+	 * @return 0|90|180|270
+	 */
+	public static function normalizeRotation(mixed $rotate): int {
+		if (!is_numeric($rotate) || (float)$rotate !== (float)(int)$rotate) {
+			return 0;
+		}
+		return match ((((int)$rotate % 360) + 360) % 360) {
+			90 => 90,
+			180 => 180,
+			270 => 270,
+			default => 0,
+		};
 	}
 
 	public function getPdfVersion(): string {

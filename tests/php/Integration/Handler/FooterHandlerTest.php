@@ -339,6 +339,40 @@ final class FooterHandlerTest extends \OCA\Libresign\Tests\Integration\TestCase 
 		$this->assertNotEmpty($text);
 	}
 
+	public function testFooterPagesFollowDisplayedOrientationOfRotatedPages(): void {
+		$this->setFooterPolicy([
+			'enabled' => true,
+			'writeQrcodeOnFooter' => false,
+			'validationSite' => '',
+			'customizeFooterTemplate' => false,
+		]);
+		$dimensions = [
+			['w' => 595, 'h' => 842],
+			['w' => 595, 'h' => 842, 'r' => 90],
+			['w' => 842, 'h' => 595],
+			['w' => 595, 'h' => 842, 'r' => 180],
+			['w' => 595, 'h' => 842, 'r' => 270],
+		];
+		$this->l10n = $this->l10nFactory->get(Application::APP_ID, 'en');
+
+		$pdf = $this->getClass()
+			->setTemplateVar('uuid', 'uuid')
+			->getFooter($dimensions);
+
+		$pages = (new \Smalot\PdfParser\Parser())->parseContent($pdf)->getPages();
+		$actual = array_map(function ($page): array {
+			$mediaBox = $page->getDetails()['MediaBox'];
+			return [(int)round((float)$mediaBox[2]), (int)round((float)$mediaBox[3])];
+		}, $pages);
+		$this->assertSame([
+			[595, 842],
+			[842, 595],
+			[842, 595],
+			[595, 842],
+			[842, 595],
+		], $actual);
+	}
+
 	public function testBoldFooterRendersWithBundledFontVariants(): void {
 		$this->setFooterPolicy([
 			'enabled' => true,

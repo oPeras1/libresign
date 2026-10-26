@@ -95,6 +95,32 @@ class FileStatusService {
 		}
 	}
 
+	/** Persist enqueue status inside the caller's database transaction. */
+	public function updateForQueuedJob(FileEntity $file): FileEntity {
+		$this->touchStatusChangedAt($file);
+		$this->fileMapper->updateWithoutCache($file);
+		return $file;
+	}
+
+	/** Restore the local entity after rollback; do not write to the database again. */
+	public function discardQueuedJobStatus(FileEntity $file, int $previousStatus, ?array $previousMetadata): void {
+		$file->setStatus($previousStatus);
+		$file->setMetadata($previousMetadata ?? []);
+		$this->fileMapper->invalidateEntityCache($file);
+	}
+
+	/**
+	 * Invalidate enqueue-era hints after commit, rather than publishing an
+	 * in-progress snapshot that might already have been superseded by a worker.
+	 */
+	public function onQueuedJobCommitted(FileEntity $file): void {
+		$this->fileMapper->invalidateEntityCache($file);
+		$this->statusCacheService->invalidateStatus($file->getUuid());
+		if ($file->hasParent()) {
+			$this->propagateStatusToParent($file->getParentFileId());
+		}
+	}
+
 	public function update(FileEntity $file): FileEntity {
 		$this->touchStatusChangedAt($file);
 		$this->fileMapper->update($file);
@@ -149,6 +175,24 @@ class FileStatusService {
 
 		$metadata[self::POLICY_SNAPSHOT_FROZEN_AT] = (new DateTime())->format(DateTimeInterface::ATOM);
 		$file->setMetadata($metadata);
+	}
+
+	/**
+	 * A document freezes with its envelope, so pass the envelope of a document
+	 * that has one.
+	 */
+	public static function isPolicySnapshotFrozen(FileEntity $file, ?FileEntity $envelope = null): bool {
+		return self::hasFrozenPolicySnapshot($file)
+			|| ($envelope !== null && self::hasFrozenPolicySnapshot($envelope));
+	}
+
+	/**
+	 * A request sent before the freeze was recorded has no marker, so it is
+	 * frozen while its status says it was sent.
+	 */
+	private static function hasFrozenPolicySnapshot(FileEntity $file): bool {
+		return isset(($file->getMetadata() ?? [])[self::POLICY_SNAPSHOT_FROZEN_AT])
+			|| $file->getStatus() >= FileStatus::ABLE_TO_SIGN->value;
 	}
 
 	private function touchStatusChangedAt(FileEntity $file): void {

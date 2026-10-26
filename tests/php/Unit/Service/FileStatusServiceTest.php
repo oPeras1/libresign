@@ -29,6 +29,26 @@ class FileStatusServiceTest extends TestCase {
 		$this->service = new FileStatusService($this->fileMapper, $this->statusCacheService);
 	}
 
+	public function testQueuedSigningStatusIsNotPublishedBeforeCommit(): void {
+		$file = new FileEntity();
+		$file->setUuid('file-uuid');
+		$file->setStatus(FileStatus::SIGNING_IN_PROGRESS->value);
+		$this->fileMapper->expects($this->once())->method('updateWithoutCache')->with($file)->willReturn($file);
+		$this->statusCacheService->expects($this->never())->method('setStatus');
+		$this->service->updateForQueuedJob($file);
+	}
+
+	public function testCommittedEnqueueDoesNotOverwriteNewerSigningProgress(): void {
+		$file = new FileEntity();
+		$file->setUuid('file-uuid');
+		$file->setStatus(FileStatus::SIGNING_IN_PROGRESS->value);
+		$this->fileMapper->expects($this->never())->method('update');
+		$this->fileMapper->expects($this->once())->method('invalidateEntityCache')->with($file);
+		$this->statusCacheService->expects($this->once())->method('invalidateStatus')->with('file-uuid');
+		$this->statusCacheService->expects($this->never())->method('setStatus');
+		$this->service->onQueuedJobCommitted($file);
+	}
+
 	#[DataProvider('dataFileStatusUpgrade')]
 	public function testUpdateFileStatusIfUpgrade(int $currentStatus, int $newStatus, bool $shouldUpdate): void {
 		$file = new FileEntity();
@@ -575,6 +595,38 @@ class FileStatusServiceTest extends TestCase {
 			'draft that stays a draft' => [FileStatus::DRAFT->value, FileStatus::DRAFT->value, false],
 			'draft sent for signing' => [FileStatus::DRAFT->value, FileStatus::ABLE_TO_SIGN->value, true],
 			'sent request returning to draft' => [FileStatus::ABLE_TO_SIGN->value, FileStatus::DRAFT->value, true],
+		];
+	}
+
+	/**
+	 * @param array<string, mixed> $metadata
+	 * @param array{0: int, 1: array<string, mixed>}|null $envelopeState
+	 */
+	#[DataProvider('dataIsPolicySnapshotFrozen')]
+	public function testIsPolicySnapshotFrozen(int $status, array $metadata, ?array $envelopeState, bool $expected): void {
+		$file = new FileEntity();
+		$file->setStatus($status);
+		$file->setMetadata($metadata);
+		$envelope = null;
+		if ($envelopeState !== null) {
+			$envelope = new FileEntity();
+			$envelope->setStatus($envelopeState[0]);
+			$envelope->setMetadata($envelopeState[1]);
+		}
+
+		$this->assertSame($expected, FileStatusService::isPolicySnapshotFrozen($file, $envelope));
+	}
+
+	public static function dataIsPolicySnapshotFrozen(): array {
+		$frozen = ['policy_snapshot_frozen_at' => '2026-01-01T00:00:00+00:00'];
+		return [
+			'draft never sent' => [FileStatus::DRAFT->value, [], null, false],
+			'sent request' => [FileStatus::ABLE_TO_SIGN->value, $frozen, null, true],
+			'sent request that returned to draft' => [FileStatus::DRAFT->value, $frozen, null, true],
+			'sent before the freeze was recorded' => [FileStatus::ABLE_TO_SIGN->value, [], null, true],
+			'document of a draft envelope' => [FileStatus::DRAFT->value, [], [FileStatus::DRAFT->value, []], false],
+			'document of a sent envelope' => [FileStatus::DRAFT->value, [], [FileStatus::DRAFT->value, $frozen], true],
+			'document of an envelope sent before the freeze was recorded' => [FileStatus::DRAFT->value, [], [FileStatus::ABLE_TO_SIGN->value, []], true],
 		];
 	}
 

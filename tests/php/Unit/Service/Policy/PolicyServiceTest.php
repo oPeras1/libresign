@@ -2017,7 +2017,7 @@ final class PolicyServiceTest extends TestCase {
 			->method('loadSystemPolicy')
 			->with(FooterPolicy::KEY)
 			->willReturn((new PolicyLayer())
-				->setScope('system')
+				->setScope('global')
 				->setValue('{"enabled":true,"writeQrcodeOnFooter":true,"validationSite":"","customizeFooterTemplate":false,"footerTemplate":""}')
 				->setAllowChildOverride(true)
 				->setVisibleToChild(true)
@@ -2044,6 +2044,49 @@ final class PolicyServiceTest extends TestCase {
 		$this->expectExceptionMessage('Validation URL override is not allowed for this actor');
 
 		$service->saveUserPreference(FooterPolicy::KEY, '{"enabled":true,"writeQrcodeOnFooter":true,"validationSite":"https://forbidden.example","customizeFooterTemplate":false,"footerTemplate":""}');
+	}
+
+	public function testUnauthorizedUserPreferenceIsDeniedBeforeCompilingTemplate(): void {
+		$user = $this->createMock(IUser::class);
+		$user->method('getUID')->willReturn('john');
+		$this->userSession->method('getUser')->willReturn($user);
+		$this->groupManager->method('isAdmin')->willReturn(false);
+		$this->groupManager->method('getUserGroupIds')->willReturn([]);
+		$this->source->method('loadSystemPolicy')->with(FooterPolicy::KEY)->willReturn(
+			(new PolicyLayer())
+				->setScope('system')
+				->setValue(FooterPolicyValue::encode(FooterPolicyValue::defaults()))
+				->setAllowChildOverride(false)
+				->setVisibleToChild(true),
+		);
+		$this->source->expects($this->never())->method('saveUserPreference');
+		$service = new PolicyService($this->contextFactory, $this->source, $this->registry, $this->l10n, $this->db);
+
+		$this->expectException(\InvalidArgumentException::class);
+		$this->expectExceptionMessage('Saving a user preference is not allowed for add_footer');
+		$service->saveUserPreference(FooterPolicy::KEY, FooterPolicyValue::encode([
+			...FooterPolicyValue::defaults(),
+			'customizeFooterTemplate' => true,
+			'footerTemplate' => '{{ range(1, 3) }}',
+		]));
+	}
+
+	public function testUnsafeFooterTemplateIsRejectedBeforeSystemPolicyWrite(): void {
+		$this->source->expects($this->never())->method('saveSystemPolicy');
+		$service = new PolicyService(
+			$this->contextFactory,
+			$this->source,
+			$this->registry,
+			$this->l10n,
+			$this->db,
+		);
+
+		$this->expectException(\InvalidArgumentException::class);
+		$service->saveSystem(FooterPolicy::KEY, FooterPolicyValue::encode([
+			...FooterPolicyValue::defaults(),
+			'customizeFooterTemplate' => true,
+			'footerTemplate' => '{% if false %}{{ range(1, 3) }}{% endif %}',
+		]));
 	}
 
 	public function testGetAllRuleCountsDelegatesToSource(): void {
@@ -2425,6 +2468,66 @@ final class PolicyServiceTest extends TestCase {
 			->with(SignatureRejectionPolicy::KEY_COMMENT_VISIBILITY, 'public', false);
 
 		$this->newService()->saveSystem(SignatureRejectionPolicy::KEY_COMMENT_VISIBILITY, 'public');
+	}
+
+	/**
+	 * A null value means there is no explicit system rule: the built-in
+	 * default applies and lower layers may override it.
+	 */
+	public function testSavingNullRemovesTheExplicitSystemRule(): void {
+		$this->givenSystemRejectionPolicy([]);
+		$this->source
+			->expects($this->once())
+			->method('clearSystemPolicy')
+			->with(SignatureRejectionPolicy::KEY_VISIBILITY);
+		$this->source->expects($this->never())->method('saveSystemPolicy');
+
+		$this->newService()->saveSystem(SignatureRejectionPolicy::KEY_VISIBILITY, null);
+	}
+
+	/**
+	 * A value equal to the built-in default is still an explicit rule, with
+	 * its own override flag.
+	 */
+	public function testSavingTheDefaultValueKeepsAnExplicitSystemRule(): void {
+		$this->givenSystemRejectionPolicy([]);
+		$this->source
+			->expects($this->once())
+			->method('saveSystemPolicy')
+			->with(SignatureRejectionPolicy::KEY_VISIBILITY, 'requester', false);
+		$this->source->expects($this->never())->method('clearSystemPolicy');
+
+		$this->newService()->saveSystem(SignatureRejectionPolicy::KEY_VISIBILITY, 'requester');
+	}
+
+	public function testACompoundWriteTellsANullApartFromAnExplicitDefault(): void {
+		$this->givenSystemRejectionPolicy([
+			SignatureRejectionPolicy::KEY_ENABLED => true,
+			SignatureRejectionPolicy::KEY_VISIBILITY => 'public',
+			SignatureRejectionPolicy::KEY_COMMENT_MODE => 'optional',
+			SignatureRejectionPolicy::KEY_COMMENT_VISIBILITY => 'public',
+		]);
+		$this->source
+			->expects($this->once())
+			->method('clearSystemPolicy')
+			->with(SignatureRejectionPolicy::KEY_VISIBILITY);
+		$this->source
+			->expects($this->once())
+			->method('saveSystemPolicy')
+			->with(SignatureRejectionPolicy::KEY_COMMENT_VISIBILITY, 'requester', false);
+
+		$saved = $this->newService()->saveSystemCompound(SignatureRejectionPolicy::KEY_ENABLED, [
+			SignatureRejectionPolicy::KEY_VISIBILITY => null,
+			SignatureRejectionPolicy::KEY_COMMENT_VISIBILITY => 'requester',
+		], [
+			SignatureRejectionPolicy::KEY_VISIBILITY => false,
+			SignatureRejectionPolicy::KEY_COMMENT_VISIBILITY => false,
+		]);
+
+		$this->assertSame(
+			[SignatureRejectionPolicy::KEY_VISIBILITY, SignatureRejectionPolicy::KEY_COMMENT_VISIBILITY],
+			array_keys($saved),
+		);
 	}
 
 	public function testACompoundWriteIsPersistedAsASingleTransaction(): void {

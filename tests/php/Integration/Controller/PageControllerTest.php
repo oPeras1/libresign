@@ -15,6 +15,7 @@ use OCA\Libresign\Handler\CertificateEngine\CertificateEngineFactory;
 use OCA\Libresign\Handler\CertificateEngine\IEngineHandler;
 use OCA\Libresign\Middleware\Attribute\RequireSetupOk;
 use OCA\Libresign\Service\AccountService;
+use OCA\Libresign\Service\EmailSignerElementsService;
 use OCA\Libresign\Service\File\FileListService;
 use OCA\Libresign\Service\FileService;
 use OCA\Libresign\Service\IdentifyMethodService;
@@ -167,6 +168,7 @@ final class PageControllerTest extends TestCase {
 			signingRequestValidator: $this->createMock(SigningRequestValidator::class),
 			eventDispatcher: $this->createMock(IEventDispatcher::class),
 			urlGenerator: $this->urlGenerator,
+			emailSignerElementsService: $this->createMock(EmailSignerElementsService::class),
 		);
 	}
 
@@ -361,6 +363,7 @@ final class PageControllerTest extends TestCase {
 			signingRequestValidator: $this->createMock(SigningRequestValidator::class),
 			eventDispatcher: $this->createMock(IEventDispatcher::class),
 			urlGenerator: $this->urlGenerator,
+			emailSignerElementsService: $this->createMock(EmailSignerElementsService::class),
 		);
 
 		$response = $controller->validationFilePublic('validation-file-uuid');

@@ -1732,6 +1732,51 @@ describe('Sign.vue - signWithTokenCode', () => {
 		})
 	})
 
+	describe('Sign.vue - saved signature of an email signer', () => {
+		const mountWithEmailSigner = async (emailSigner: { confirmMethod: string, hasSaved: boolean } | null) => {
+			setActivePinia(createPinia())
+			const { default: realSign } = await import('../../../views/SignPDF/_partials/Sign.vue')
+			const { useSignStore } = await import('../../../store/sign.js')
+			const { useSignatureElementsStore } = await import('../../../store/signatureElements.js')
+			const signStore = useSignStore()
+			const signatureElementsStore = useSignatureElementsStore()
+			signStore.document = createSignDocument({
+				signers: [{ signRequestId: 501, me: true }],
+				visibleElements: [
+					{ elementId: 201, fileId: 1, signRequestId: 501, type: 'signature', coordinates: { page: 1, left: 10, top: 20, width: 30, height: 40 } },
+				],
+			})
+			signatureElementsStore.emailSigner = emailSigner
+			const useSavedSignature = vi.spyOn(signatureElementsStore, 'useSavedSignature').mockResolvedValue(true)
+			const wrapper = mount(realSign, createSignMountOptions())
+			return { wrapper, useSavedSignature }
+		}
+
+		it('offers the saved signature only when one was saved for the email', async () => {
+			expect((await mountWithEmailSigner({ confirmMethod: 'clickToSign', hasSaved: true })).wrapper.vm.canUseSavedSignature).toBe(true)
+			expect((await mountWithEmailSigner({ confirmMethod: 'clickToSign', hasSaved: false })).wrapper.vm.canUseSavedSignature).toBe(false)
+			expect((await mountWithEmailSigner(null)).wrapper.vm.canUseSavedSignature).toBe(false)
+		})
+
+		it('asks for the email code before releasing the saved signature when email token is configured', async () => {
+			const { wrapper, useSavedSignature } = await mountWithEmailSigner({ confirmMethod: 'emailToken', hasSaved: true })
+
+			await wrapper.vm.useSavedSignature()
+
+			expect(wrapper.vm.showSavedSignatureCode).toBe(true)
+			expect(useSavedSignature).not.toHaveBeenCalled()
+		})
+
+		it('uses the sign link alone when click to sign is configured', async () => {
+			const { wrapper, useSavedSignature } = await mountWithEmailSigner({ confirmMethod: 'clickToSign', hasSaved: true })
+
+			await wrapper.vm.useSavedSignature()
+
+			expect(useSavedSignature).toHaveBeenCalledWith()
+			expect(wrapper.vm.showSavedSignatureCode).toBe(false)
+		})
+	})
+
 	describe('Sign.vue - create signature modal', () => {
 		it('renders Draw editor when createSignature modal is active', async () => {
 			setActivePinia(createPinia())

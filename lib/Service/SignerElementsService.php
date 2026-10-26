@@ -225,17 +225,37 @@ class SignerElementsService {
 	}
 
 	private function createFileOfVisibleElementUsingSession(array $data, string $sessionId): File {
+		return $this->createSessionElement($data['type'], $this->getFileRaw($data), $sessionId);
+	}
+
+	private function createSessionElement(string $type, string $content, string $sessionId): File {
 		$rootSignatureFolder = $this->folderService->getFolder();
 		$folderName = $sessionId;
 		$folderToFile = $rootSignatureFolder->newFolder($folderName);
 		$filename = implode(
 			'_',
 			[
-				$data['type'],
+				$type,
 				$this->timeFactory->getDateTime()->getTimestamp(),
 			]
 		) . '.png';
-		return $folderToFile->newFile($filename, $this->getFileRaw($data));
+		return $folderToFile->newFile($filename, $content);
+	}
+
+	public function getSessionElementType(File $element): string {
+		return explode('_', pathinfo($element->getName(), PATHINFO_FILENAME))[0];
+	}
+
+	/**
+	 * Replace the element of a type stored in the current signing session
+	 */
+	public function replaceSessionElement(string $type, string $content): void {
+		foreach ($this->getElementsFromSession() as $element) {
+			if ($element instanceof File && $this->getSessionElementType($element) === $type) {
+				$element->delete();
+			}
+		}
+		$this->createSessionElement($type, $content, $this->sessionService->getSessionId());
 	}
 
 	private function insertVisibleElement(array $data, IUser $user, File $file): void {

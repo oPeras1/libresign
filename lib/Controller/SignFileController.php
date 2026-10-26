@@ -20,6 +20,7 @@ use OCA\Libresign\Middleware\Attribute\RequireManager;
 use OCA\Libresign\Middleware\Attribute\RequireSigner;
 use OCA\Libresign\ResponseDefinitions;
 use OCA\Libresign\Service\AsyncSigningService;
+use OCA\Libresign\Service\EmailSignerElementsService;
 use OCA\Libresign\Service\File\SettingsLoader;
 use OCA\Libresign\Service\FileService;
 use OCA\Libresign\Service\IdentifyMethodService;
@@ -76,6 +77,7 @@ class SignFileController extends AEnvironmentAwareController implements ISignatu
 		private SignerIpGeolocationPolicyService $signerIpGeolocationPolicyService,
 		private SigningErrorHandler $errorHandler,
 		private SignatureRejectionService $signatureRejectionService,
+		private EmailSignerElementsService $emailSignerElementsService,
 		private LoggerInterface $logger,
 	) {
 		parent::__construct(Application::APP_ID, $request);
@@ -167,6 +169,9 @@ class SignFileController extends AEnvironmentAwareController implements ISignatu
 
 			$this->visibleElementValidator->validateVisibleElementsRelation($elements, $signRequest, $user);
 			$this->signerValidator->validateCredentials($signRequest, $method, $identifyValue, $token);
+			if (!$user instanceof IUser) {
+				$this->saveEmailSignerElements($signRequest, $token, $elements);
+			}
 
 			$userIdentifier = $this->identifyMethodService->getUserIdentifier($signRequest->getId());
 			$metadata = $this->requestMetadataService->collectMetadata();
@@ -213,6 +218,15 @@ class SignFileController extends AEnvironmentAwareController implements ISignatu
 		} catch (\Throwable $e) {
 			$data = $this->errorHandler->handleException($e);
 			return new DataResponse($data, Http::STATUS_UNPROCESSABLE_ENTITY);
+		}
+	}
+
+	private function saveEmailSignerElements(SignRequest $signRequest, string $token, array $elements): void {
+		try {
+			$this->emailSignerElementsService->saveAfterConfirmedSign($signRequest, $token, $elements);
+		} catch (\Throwable $e) {
+			// Keeping the signature for later documents must never block signing this one.
+			$this->logger->warning('Unable to save signature elements of email signer', ['exception' => $e]);
 		}
 	}
 

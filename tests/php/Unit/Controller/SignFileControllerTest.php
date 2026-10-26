@@ -15,6 +15,7 @@ use OCA\Libresign\Db\SignRequest;
 use OCA\Libresign\Db\SignRequestMapper;
 use OCA\Libresign\Handler\SigningErrorHandler;
 use OCA\Libresign\Service\AsyncSigningService;
+use OCA\Libresign\Service\EmailSignerElementsService;
 use OCA\Libresign\Service\File\SettingsLoader;
 use OCA\Libresign\Service\FileService;
 use OCA\Libresign\Service\IdentifyMethodService;
@@ -78,6 +79,7 @@ final class SignFileControllerTest extends TestCase {
 			$this->createMock(SignerIpGeolocationPolicyService::class),
 			$this->createMock(SigningErrorHandler::class),
 			$this->createMock(SignatureRejectionService::class),
+			$this->createMock(EmailSignerElementsService::class),
 			$this->logger,
 		);
 	}

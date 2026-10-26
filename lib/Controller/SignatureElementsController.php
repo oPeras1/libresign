@@ -9,8 +9,10 @@ declare(strict_types=1);
 namespace OCA\Libresign\Controller;
 
 use OCA\Libresign\AppInfo\Application;
+use OCA\Libresign\Db\SignRequest;
 use OCA\Libresign\Middleware\Attribute\RequireSignRequestUuid;
 use OCA\Libresign\Service\AccountService;
+use OCA\Libresign\Service\EmailSignerElementsService;
 use OCA\Libresign\Service\SessionService;
 use OCA\Libresign\Service\SignatureTextService;
 use OCA\Libresign\Service\SignerElementsService;
@@ -19,7 +21,9 @@ use OCA\Libresign\Service\Validation\FileInputValidator;
 use OCA\Libresign\Service\Validation\VisibleElementValidator;
 use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\AppFramework\Http;
+use OCP\AppFramework\Http\Attribute\AnonRateLimit;
 use OCP\AppFramework\Http\Attribute\ApiRoute;
+use OCP\AppFramework\Http\Attribute\BruteForceProtection;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
 use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
 use OCP\AppFramework\Http\Attribute\PublicPage;
@@ -56,6 +60,7 @@ class SignatureElementsController extends AEnvironmentAwareController implements
 		protected IMimeIconProvider $mimeIconProvider,
 		protected IURLGenerator $urlGenerator,
 		private VisibleElementValidator $visibleElementValidator,
+		private EmailSignerElementsService $emailSignerElementsService,
 	) {
 		parent::__construct(Application::APP_ID, $request);
 	}
@@ -149,6 +154,63 @@ class SignatureElementsController extends AEnvironmentAwareController implements
 				Http::STATUS_NOT_FOUND
 			);
 		}
+	}
+
+	/**
+	 * Use the saved signature elements of a signer identified by email
+	 *
+	 * The saved elements are copied into the current signing session only
+	 * after the signer satisfies the confirm method configured for the Email
+	 * identification factor.
+	 *
+	 * @param string $token Verification code, required when the confirm method is the email token
+	 * @return DataResponse<Http::STATUS_OK, LibresignUserElementsResponse, array{}>|DataResponse<Http::STATUS_UNPROCESSABLE_ENTITY, LibresignMessageResponse, array{}>
+	 *
+	 * 200: OK
+	 * 422: The saved elements cannot be used
+	 */
+	#[NoAdminRequired]
+	#[NoCSRFRequired]
+	#[PublicPage]
+	#[AnonRateLimit(limit: 10, period: 60)]
+	#[BruteForceProtection(action: 'libresign_email_signer_elements')]
+	#[RequestHeader(name: 'libresign-sign-request-uuid', description: 'The UUID of the sign request, used to identify the request', indirect: true)]
+	#[RequireSignRequestUuid]
+	#[ApiRoute(verb: 'POST', url: '/api/{apiVersion}/signature/elements/saved', requirements: ['apiVersion' => '(v1)'])]
+	public function useSavedSignatureElements(string $token = ''): DataResponse {
+		$signRequest = $this->getSignRequestEntity();
+		if ($this->userSession->getUser() instanceof IUser || !$signRequest instanceof SignRequest) {
+			return new DataResponse(
+				[
+					// TRANSLATORS Error shown when a signer tries to reuse a saved signature on a request that was not sent by email.
+					'message' => $this->l10n->t('Saved signatures are only available to signers identified by email'),
+				],
+				Http::STATUS_UNPROCESSABLE_ENTITY
+			);
+		}
+		try {
+			$elements = $this->emailSignerElementsService->unlock($signRequest, $token);
+		} catch (\Throwable $th) {
+			$message = $th->getMessage();
+			$decoded = json_decode($message, true);
+			if (is_array($decoded) && isset($decoded['errors'][0]['message'])) {
+				$message = (string)$decoded['errors'][0]['message'];
+			}
+			$response = new DataResponse(
+				[
+					'message' => $message,
+				],
+				Http::STATUS_UNPROCESSABLE_ENTITY
+			);
+			$response->throttle();
+			return $response;
+		}
+		return new DataResponse(
+			[
+				'elements' => $elements,
+			],
+			Http::STATUS_OK
+		);
 	}
 
 	/**
@@ -305,6 +367,9 @@ class SignatureElementsController extends AEnvironmentAwareController implements
 	#[ApiRoute(verb: 'DELETE', url: '/api/{apiVersion}/signature/elements/{nodeId}', requirements: ['apiVersion' => '(v1)'])]
 	public function deleteSignatureElement(int $nodeId): DataResponse {
 		try {
+			if (!$this->userSession->getUser() instanceof IUser) {
+				$this->emailSignerElementsService->forgetSessionElement($nodeId);
+			}
 			$this->accountService->deleteSignatureElement(
 				user: $this->userSession->getUser(),
 				nodeId: $nodeId,

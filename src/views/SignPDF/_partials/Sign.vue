@@ -50,6 +50,14 @@
 					<!-- TRANSLATORS Warning shown when the signer has not created any reusable signature yet. -->
 					{{ t('libresign', 'You do not have any signature defined.') }}
 				</p>
+				<NcButton v-if="canUseSavedSignature"
+					:wide="true"
+					:disabled="loading"
+					variant="primary"
+					@click="useSavedSignature">
+					<!-- TRANSLATORS Button label for a signer identified by email to reuse the signature saved while signing an earlier document. -->
+					{{ t('libresign', 'Use my saved signature') }}
+				</NcButton>
 				<NcButton :wide="true"
 					:disabled="loading"
 					variant="primary"
@@ -219,6 +227,11 @@
 			mode="email"
 			@change="signWithEmailToken"
 			@close="signMethodsStore.closeModal('emailToken')" />
+		<ModalVerificationCode v-if="showSavedSignatureCode"
+			mode="email"
+			purpose="savedSignature"
+			@unlocked="showSavedSignatureCode = false"
+			@close="showSavedSignatureCode = false" />
 		<NcDialog v-if="showGeolocationPrivacyDialog"
 			:no-close="collectingGeolocation"
 			:name="geolocationPrivacyDialogTitle"
@@ -478,6 +491,8 @@ type SignatureElementsStoreContract = ReturnType<typeof useSignatureElementsStor
 	signRequestUuid: string
 	success: string
 	error: string
+	emailSigner: { confirmMethod: string, hasSaved: boolean } | null
+	useSavedSignature: (token?: string) => Promise<boolean>
 }
 
 type SidebarStoreContract = ReturnType<typeof useSidebarStore>
@@ -611,6 +626,8 @@ const needCreateSignature = computed(() => {
 	}
 	return hasVisibleElementsForCurrentUser(visibleElementsDocument.value)
 })
+const showSavedSignatureCode = ref(false)
+const canUseSavedSignature = computed(() => needCreateSignature.value && signatureElementsStore.emailSigner?.hasSaved === true)
 const hasVisibleSignatureField = computed(() => hasVisibleElementsForCurrentUser(visibleElementsDocument.value))
 const needIdentificationDocuments = computed(() => identificationDocumentStore.showDocumentsComponent())
 const canCreateSignature = computed(() => {
@@ -697,6 +714,21 @@ function saveSignature() {
 		showError(signatureElementsStore.error)
 	}
 	signMethodsStore.closeModal('createSignature')
+}
+
+async function useSavedSignature() {
+	// The server releases the saved signature only through the confirm method
+	// configured for the Email identification factor.
+	if (signatureElementsStore.emailSigner?.confirmMethod === 'emailToken') {
+		showSavedSignatureCode.value = true
+		return
+	}
+	if (!await signatureElementsStore.useSavedSignature()) {
+		const error = signatureElementsStore.error as unknown
+		const message = typeof error === 'object' && error !== null ? (error as { message?: string }).message : ''
+		// TRANSLATORS Error shown when the signature saved while signing an earlier document cannot be reused.
+		showError(message || t('libresign', 'Unable to use the saved signature'))
+	}
 }
 
 async function signWithClick() {
@@ -999,6 +1031,9 @@ defineExpose({
 	elements,
 	hasSignatures,
 	needCreateSignature,
+	canUseSavedSignature,
+	showSavedSignatureCode,
+	useSavedSignature,
 	canCreateSignature,
 	submitSignature,
 	signWithTokenCode,

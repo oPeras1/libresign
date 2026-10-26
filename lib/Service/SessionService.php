@@ -51,6 +51,16 @@ class SessionService {
 		$this->session->set('libresign-sign-start-time', time());
 	}
 
+	public function setEmailSignatureKey(string $key): void {
+		$this->session->reopen();
+		$this->session->set('libresign-email-signature-key', $key);
+	}
+
+	public function getEmailSignatureKey(): string {
+		$key = $this->session->get('libresign-email-signature-key');
+		return is_string($key) ? $key : '';
+	}
+
 	public function isAuthenticated(): bool {
 		return $this->session->get('user_id') ? true : false;
 	}

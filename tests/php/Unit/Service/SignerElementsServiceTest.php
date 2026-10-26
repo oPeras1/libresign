@@ -587,6 +587,36 @@ final class SignerElementsServiceTest extends \OCA\Libresign\Tests\Unit\TestCase
 		$this->getService()->getElementFromSessionByNodeId(42);
 	}
 
+	public function testReplaceSessionElementKeepsOnlyOneElementOfType(): void {
+		$root = $this->createMock(Folder::class);
+		$folder = $this->createMock(Folder::class);
+		$sameType = $this->createMock(File::class);
+		$sameType->method('getName')->willReturn('signature_1700000000.png');
+		$sameType->expects($this->once())->method('delete');
+		$otherType = $this->createMock(File::class);
+		$otherType->method('getName')->willReturn('initial_1700000000.png');
+		$otherType->expects($this->never())->method('delete');
+		$this->folderService->method('getFolder')->willReturn($root);
+		$this->sessionService->method('getSessionId')->willReturn('session-id');
+		$root->method('get')->with('session-id')->willReturn($folder);
+		$root->method('newFolder')->with('session-id')->willReturn($folder);
+		$folder->method('getDirectoryListing')->willReturn([$sameType, $otherType]);
+		$now = new \DateTime('@1800000000');
+		$this->timeFactory->method('getDateTime')->willReturn($now);
+		$folder->expects($this->once())->method('newFile')
+			->with('signature_1800000000.png', 'saved-image')
+			->willReturn($this->createMock(File::class));
+
+		$this->getService()->replaceSessionElement('signature', 'saved-image');
+	}
+
+	public function testGetSessionElementType(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getName')->willReturn('initial_1700000000.png');
+
+		$this->assertSame('initial', $this->getService()->getSessionElementType($file));
+	}
+
 	#[DataProvider('provideInvalidUrlImageCases')]
 	public function testSaveVisibleElementRejectsInvalidUrlImageInput(string $url, string $mime, string $body, string $error): void {
 		$element = new UserElement();
